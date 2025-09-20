@@ -13,6 +13,7 @@ import Recommendations from './pages/Recommendations';
 import Settings from './pages/Settings';
 import DeviceManagement from './pages/DeviceManagement';
 import Profile from './pages/Profile';
+import AdaptivePositionSystem from './pages/AdaptivePositionSystem';
 
 // Import components
 import Navbar from './components/Navbar';
@@ -251,6 +252,7 @@ function App() {
                 <Route path="/analytics" element={<Analytics />} />
                 <Route path="/recommendations" element={<Recommendations />} />
                 <Route path="/devices" element={<DeviceManagement />} />
+                <Route path="/position-system" element={<AdaptivePositionSystem />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/profile" element={<Profile />} />
               </Routes>

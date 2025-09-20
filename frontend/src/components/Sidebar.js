@@ -18,7 +18,8 @@ import {
   Lightbulb,
   DeviceHub,
   Settings,
-  Person
+  Person,
+  Bed
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 
@@ -29,6 +30,7 @@ const menuItems = [
   { text: 'Sleep Tracking', icon: <Bedtime />, path: '/tracking' },
   { text: 'Analytics', icon: <Analytics />, path: '/analytics' },
   { text: 'Recommendations', icon: <Lightbulb />, path: '/recommendations' },
+  { text: 'Position System', icon: <Bed />, path: '/position-system' },
   { text: 'Devices', icon: <DeviceHub />, path: '/devices' },
   { text: 'Profile', icon: <Person />, path: '/profile' },
   { text: 'Settings', icon: <Settings />, path: '/settings' },
