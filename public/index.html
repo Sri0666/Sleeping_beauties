@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sleeping Beauties • Sleep Dashboard</title>
+  <style>
+    :root { --bg:#0f172a; --panel:#0b1324; --card:#111827; --border:#374151; --muted:#94a3b8; --accent:#6366f1; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: var(--bg); color: #e2e8f0; }
+    header { background: linear-gradient(90deg, #0b1324, #0f1a3a); border-bottom: 1px solid var(--border); padding: 12px 16px; }
+    header h1 { margin: 0; font-size: 1.3rem; letter-spacing: 0.2px; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 12px 16px 24px; }
+    .grid { display: grid; gap: 12px; }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    @media (max-width: 900px) { 
+      .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; } 
+      .container { padding: 8px 12px 16px; }
+      header { padding: 8px 12px; }
+      header h1 { font-size: 1.1rem; }
+    }
+    @media (max-width: 600px) {
+      .grid.cols-2 { gap: 8px; }
+      .card { padding: 8px; margin-top: 8px !important; }
+      h2 { font-size: 0.9rem; margin: 0 0 4px 0; }
+      .muted { font-size: 0.75rem; }
+    }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.25); }
+    h2 { margin: 0 0 6px 0; font-size: 1rem; }
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+    button { background: #2563eb; color: white; border: none; border-radius: 6px; padding: 8px 12px; cursor: pointer; font-size: 0.9rem; }
+    button.secondary { background: #334155; }
+  button.secondary.active { background: var(--accent); }
+    button:hover { background: #1d4ed8; }
+    .stat { display:flex; align-items: center; justify-content: space-between; }
+    .stat .value { font-size: 1.8rem; font-weight: 700; }
+    @media (max-width: 600px) { .stat .value { font-size: 1.5rem; } }
+    .stat .label { font-size: .75rem; color: var(--muted); }
+    .pill { display:inline-block; padding: 3px 6px; border-radius: 999px; border:1px solid var(--border); background:#0c1730; font-size:.75rem; color:#cbd5e1; }
+    pre { background: #0b1220; color: #cbd5e1; padding: 10px; border-radius: 6px; overflow: auto; max-height: 200px; font-size: 0.8rem; }
+    footer { margin-top: 16px; font-size: .8rem; color: #64748b; text-align: center; }
+    canvas { max-width: 100%; height: auto; }
+    @media (max-width: 600px) {
+      #bedViz, #bedVizControls, #manualEq { height: 120px !important; }
+      #gridViz, #gridVizControls { height: 200px !important; }
+      #pressureMap { height: 240px !important; }
+      #timeChart, #zoneChart, #caffeineChart { height: 160px !important; }
+    }
+    footer { margin-top: 24px; font-size: .9rem; color: #64748b; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>😴 Sleeping Beauties • Sleep Dashboard</h1>
+    </div>
+  </header>
+
+  <!-- Navbar Tabs -->
+  <nav style="background:#0b1324; border-bottom:1px solid var(--border);">
+    <div class="container" style="padding-top:6px; padding-bottom:6px;">
+      <div class="row" id="tabs" style="gap:8px;">
+        <button class="secondary" data-tab="overview">Overview</button>
+        <button class="secondary" data-tab="visuals">Visualizations</button>
+        <button class="secondary" data-tab="insights">Insights</button>
+        <button class="secondary" data-tab="wellness">Wellness</button>
+        <button class="secondary" data-tab="controls">Controls</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Controls -->
+    <div class="card" style="margin-bottom:8px;">
+      <div class="row">
+        <button id="scan">Scan once</button>
+        <label class="row" style="gap:4px;">
+          <input type="checkbox" id="auto" /> Auto mode (every 3s)
+        </label>
+        <span class="pill" id="status">Disconnected</span>
+        <button class="secondary" id="ping">Ping /api/health</button>
+      </div>
+    </div>
+
+    <!-- TAB: Overview -->
+    <section data-tab-panel="overview">
+      <!-- Stat cards -->
+      <div class="grid cols-3">
+      <div class="card stat">
+        <div>
+          <div class="label">Sleep Quality (demo)</div>
+          <div class="value" id="qualityVal">--</div>
+        </div>
+        <div class="muted" id="qualityHint">Penalties for low SpO₂ & high core pressure</div>
+      </div>
+      <div class="card stat">
+        <div>
+          <div class="label">SpO₂</div>
+          <div class="value" id="spo2Val">--</div>
+        </div>
+        <div class="muted">%</div>
+      </div>
+      <div class="card stat">
+        <div>
+          <div class="label">Core Pressure Avg</div>
+          <div class="value" id="coreVal">--</div>
+        </div>
+        <div class="muted">kPa (relative)</div>
+      </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="grid cols-2" style="margin-top:8px;">
+        <div class="card">
+          <h2>SpO₂ & Core Pressure over time</h2>
+          <canvas id="timeChart" height="220"></canvas>
+        </div>
+        <div class="card">
+          <h2>Latest Body Zone Pressures</h2>
+          <canvas id="zoneChart" height="220"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Visualizations -->
+    <section data-tab-panel="visuals" style="display:none;">
+      <!-- Servo action and bed posture side by side -->
+      <div class="grid cols-2" style="margin-top:8px;">
+        <div class="card">
+          <h2>Servo Recommendation</h2>
+          <div class="row" style="justify-content: space-between;">
+            <div>
+              <div class="label">Suggested movement</div>
+              <div class="value" id="servoVal">--</div>
+            </div>
+            <div class="muted" id="reasoningVal"></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Bed posture (equalizer view)</h2>
+          <div class="muted" style="margin-bottom:6px;">Higher bars mean more elevation suggested for that zone based on pressure and SpO₂.</div>
+          <canvas id="bedViz" height="120"></canvas>
+        </div>
+      </div>
+
+      <!-- 8x8 Servo activation full width for better visibility -->
+      <div class="card" style="margin-top:8px;">
+        <h2>Servo activation (top-down 8×8)</h2>
+        <div class="muted" style="margin-bottom:6px;">Cells brighten when more activation/elevation is suggested. Person overlay helps visualize position.</div>
+        <canvas id="gridViz" height="220"></canvas>
+      </div>
+    </section>
+
+    <!-- TAB: Insights -->
+    <section data-tab-panel="insights" style="display:none;">
+      <!-- Sleep insights (position & snoring) -->
+      <div class="grid cols-2" style="margin-top:16px;">
+        <div class="card stat">
+          <div>
+            <div class="label">Sleeping Position</div>
+            <div class="value" id="positionVal">--</div>
+          </div>
+          <div class="muted">Estimated from pressure profile</div>
+        </div>
+        <div class="card stat">
+          <div>
+            <div class="label">Snoring</div>
+            <div class="value" id="snoreVal">--</div>
+          </div>
+          <div class="muted">Heuristic from head/neck + SpO₂</div>
+        </div>
+      </div>
+      <!-- Recommendations -->
+      <div class="card" style="margin-top:16px;">
+        <h2>Recommendations</h2>
+        <ul class="muted" id="recsList" style="margin:6px 0 0 18px;">
+          <li>Target bedtime: 10:30–11:30 PM; aim for 7–9 hours.</li>
+          <li>Keep room cool and dark; consistent schedule.</li>
+          <li>Limit late caffeine; light activity during the day.</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- TAB: Wellness -->
+    <section data-tab-panel="wellness" style="display:none;">
+      <!-- Compact layout for wellness stats -->
+      <div class="grid cols-2" style="margin-top:8px;">
+        <!-- Daily Reminders -->
+        <div class="card">
+          <h2>Daily Reminders</h2>
+          <div style="display:flex; flex-direction:column; gap:6px;">
+            <label class="row" style="gap:6px;"><input type="checkbox" id="rem_phone" /> <span style="font-size:0.9rem;">Put phone away 1h before bed</span></label>
+            <label class="row" style="gap:6px;"><input type="checkbox" id="rem_sun" /> <span style="font-size:0.9rem;">Get morning sunlight</span></label>
+            <label class="row" style="gap:6px;"><input type="checkbox" id="rem_breakfast" /> <span style="font-size:0.9rem;">Have breakfast</span></label>
+            <label class="row" style="gap:6px;"><input type="checkbox" id="rem_dinner" /> <span style="font-size:0.9rem;">Eat dinner early</span></label>
+          </div>
+        </div>
+
+        <!-- Caffeine intake tracking -->
+        <div class="card">
+          <h2>Caffeine intake (last 24h)</h2>
+          <div class="row" style="gap:6px; margin-bottom:8px; flex-wrap:wrap;">
+            <button class="secondary" data-caffeine="80" style="font-size:0.8rem; padding:4px 8px;">+ Espresso (80mg)</button>
+            <button class="secondary" data-caffeine="95" style="font-size:0.8rem; padding:4px 8px;">+ Coffee (95mg)</button>
+            <button class="secondary" data-caffeine="40" style="font-size:0.8rem; padding:4px 8px;">+ Tea (40mg)</button>
+            <button class="secondary" data-caffeine="160" style="font-size:0.8rem; padding:4px 8px;">+ Energy drink (160mg)</button>
+          </div>
+          <div class="muted" style="font-size:0.85rem;">Total: <span id="caffeineTotal">0mg</span></div>
+          <canvas id="caffeineChart" height="120" style="margin-top:8px;"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB: Controls -->
+    <section data-tab-panel="controls" style="display:none;">
+      <!-- Manual equalizer -->
+      <div class="card" style="margin-top:16px;">
+        <h2>Manual equalizer (motors)</h2>
+        <div class="muted" style="margin-bottom:8px;">Drag bars to set zone elevation. Toggle manual to apply. Hollow dots show recommended heights.</div>
+        <div class="row" style="gap:12px; margin-bottom:8px;">
+          <label class="row" style="gap:6px;"><input type="checkbox" id="manualEnable" /> Manual mode</label>
+          <button class="secondary" id="manualReset">Reset to recommended</button>
+        </div>
+        <canvas id="manualEq" height="200"></canvas>
+      </div>
+
+      <!-- Real-time visualizations side by side -->
+      <div class="grid cols-2" style="margin-top:16px;">
+        <div class="card">
+          <h2>Bed posture (real-time view)</h2>
+          <div class="muted" style="margin-bottom:8px;">Live view of current bed elevation. Green bars show active settings, hollow dots show recommendations.</div>
+          <canvas id="bedVizControls" height="160"></canvas>
+        </div>
+        <div class="card">
+          <h2>Servo activation (real-time 8×8)</h2>
+          <div class="muted" style="margin-bottom:8px;">Live heatmap showing current servo activation levels. Updates immediately when manual controls change.</div>
+          <canvas id="gridVizControls" height="260"></canvas>
+        </div>
+      </div>
+
+      <!-- Pressure distribution analysis (similar to attached image) -->
+      <div class="grid cols-2" style="margin-top:16px;">
+        <div class="card">
+          <h2>Pressure Mapping</h2>
+          <div class="muted" style="margin-bottom:12px;">Body pressure distribution analysis</div>
+          <canvas id="pressureMap" height="300"></canvas>
+          <div style="margin-top:8px; font-size:0.85rem;">
+            <span style="color:#10b981;">20-25 (Low)</span> • 
+            <span style="color:#eab308;">25-40 (Normal)</span> • 
+            <span style="color:#f97316;">40-55 (Elevated)</span> • 
+            <span style="color:#dc2626;">55+ (High)</span>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Body Position Controller</h2>
+          <div class="muted" style="margin-bottom:12px;">Zone-specific pressure analysis and control</div>
+          <div id="zoneAnalysis" style="font-size:0.9rem;">
+            <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+              <span>Head & Neck:</span><span id="headNeckPressure">--</span>
+            </div>
+            <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+              <span>Torso:</span><span id="torsoPressure">--</span>
+            </div>
+            <div class="row" style="justify-content:space-between; margin-bottom:4px;">
+              <span>Legs:</span><span id="legsPressure">--</span>
+            </div>
+            <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+              <span>Feet:</span><span id="feetPressure">--</span>
+            </div>
+          </div>
+          <div class="row" style="gap:8px; margin-top:12px;">
+            <button class="secondary" id="aiAnalysis">AI Analysis</button>
+            <button class="secondary" id="resetPosition">Reset</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  
+  
+  
+  <script src="/app.js"></script>
+</body>
+</html>
