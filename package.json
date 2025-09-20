@@ -1,0 +1,31 @@
+{
+  "name": "sleeping-beauties",
+  "version": "1.0.0",
+  "description": "Smart sleep tracking system with ESP32 integration",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && npm run dev",
+    "frontend": "cd frontend && npm start",
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "sleep-tracking",
+    "esp32",
+    "iot",
+    "health",
+    "wellness",
+    "circadian-rhythm"
+  ],
+  "author": "Sleeping Beauties Team",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
+}
