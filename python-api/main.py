@@ -23,9 +23,11 @@ logger = logging.getLogger(__name__)
 tokenizer = None
 model = None
 text_pipeline = None
-# Use Falcon-7B-Instruct with proper configuration as per documentation
+# Use Falcon-7B-Instruct with memory optimizations as primary choice
 MODEL_CANDIDATES = [
-    "tiiuae/falcon-7b-instruct",  # Primary choice from documentation
+    "tiiuae/falcon-7b-instruct",  # Primary choice - 7B parameter model
+    "microsoft/DialoGPT-medium",  # Good conversational model, ~400MB
+    "gpt2-medium",  # Medium GPT-2, ~1.5GB  
     "gpt2",  # Simple fallback
 ]
 CURRENT_MODEL = None
@@ -60,17 +62,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variables for model
-tokenizer = None
-model = None
-text_pipeline = None
-# Use Falcon-7B-Instruct with proper configuration as per documentation
-MODEL_CANDIDATES = [
-    "tiiuae/falcon-7b-instruct",  # Primary choice from documentation
-    "gpt2",  # Simple fallback
-]
-CURRENT_MODEL = None
-body_zones = ["head", "neck", "upper_torso", "lower_torso", "hips", "thighs", "knees"]
 
 # Pydantic models
 class PressureData(BaseModel):
@@ -113,6 +104,7 @@ class HealthResponse(BaseModel):
     ok: bool
     model_loaded: bool
     model_name: str
+    device: Optional[str] = None
 
 def load_model():
     """Load the best available LLM model using proper imports and error handling"""
@@ -123,20 +115,51 @@ def load_model():
             logger.info(f"Attempting to load model: {model_name}")
             
             if "falcon" in model_name.lower():
-                # Load Falcon-7B-Instruct with official configuration
-                logger.info("Loading Falcon-7B-Instruct with official configuration...")
+                # Load Falcon-7B-Instruct with memory optimizations
+                logger.info("Loading Falcon-7B-Instruct with memory optimizations...")
                 
                 # First try to load tokenizer
                 tokenizer = AutoTokenizer.from_pretrained(model_name)
                 if tokenizer.pad_token is None:
                     tokenizer.pad_token = tokenizer.eos_token
                 
-                # Load model with proper settings for Falcon
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-                    device_map="auto" if torch.cuda.is_available() else "cpu"
-                )
+                # Memory optimization strategies for large models
+                try:
+                    # Strategy 1: Use 8-bit quantization if available
+                    try:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            model_name,
+                            load_in_8bit=True,
+                            device_map="auto",
+                            torch_dtype=torch.float16,
+                            trust_remote_code=True,
+                            low_cpu_mem_usage=True
+                        )
+                        logger.info("Loaded with 8-bit quantization")
+                    except Exception as quant_error:
+                        logger.warning(f"8-bit loading failed: {quant_error}")
+                        # Strategy 2: Use CPU offloading with smaller GPU allocation
+                        model = AutoModelForCausalLM.from_pretrained(
+                            model_name,
+                            torch_dtype=torch.float16,
+                            device_map="auto",
+                            low_cpu_mem_usage=True,
+                            trust_remote_code=True,
+                            max_memory={0: "6GB", "cpu": "8GB"}  # Limit GPU to 6GB, rest to CPU
+                        )
+                        logger.info("Loaded with CPU offloading")
+                        
+                except Exception as mem_error:
+                    logger.warning(f"Memory optimized loading failed: {mem_error}")
+                    # Strategy 3: Fallback to basic loading with reduced precision
+                    model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        torch_dtype=torch.float16,
+                        device_map="cpu",  # Load entirely on CPU if needed
+                        low_cpu_mem_usage=True,
+                        trust_remote_code=True
+                    )
+                    logger.info("Loaded on CPU due to memory constraints")
                 
                 # Create pipeline using transformers.pipeline function
                 try:
@@ -144,8 +167,7 @@ def load_model():
                         "text-generation",
                         model=model,
                         tokenizer=tokenizer,
-                        dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-                        device_map="auto" if torch.cuda.is_available() else "cpu",
+                        torch_dtype=torch.float16,
                     )
                     logger.info("Pipeline created successfully")
                 except Exception as pipeline_error:
@@ -384,7 +406,8 @@ async def health_check():
     return HealthResponse(
         ok=True,
         model_loaded=text_pipeline is not None,
-        model_name=CURRENT_MODEL or "None"
+        model_name=CURRENT_MODEL or "None",
+        device=("cuda" if torch.cuda.is_available() else "cpu")
     )
 
 @app.post("/generate")
@@ -446,4 +469,4 @@ async def predict_servo(request: PredictRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
