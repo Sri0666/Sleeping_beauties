@@ -2,6 +2,8 @@
 
 // Elements
 const statusEl = document.getElementById('status');
+const llmStatusEl = document.getElementById('llm-status');
+const dataSourceEl = document.getElementById('data-source');
 const qualityVal = document.getElementById('qualityVal');
 const spo2Val = document.getElementById('spo2Val');
 const coreVal = document.getElementById('coreVal');
@@ -79,6 +81,23 @@ function setStatus(text, ok) {
   statusEl.style.borderColor = ok ? '#16a34a' : '#f59e0b';
 }
 
+function setLLMStatus(available, lastDataSource = null) {
+  if (llmStatusEl) {
+    llmStatusEl.textContent = available ? 'LLM: Available' : 'LLM: Unavailable';
+    llmStatusEl.style.background = available ? '#16a34a' : '#dc2626';
+  }
+  
+  if (dataSourceEl && lastDataSource) {
+    if (lastDataSource === 'llm') {
+      dataSourceEl.textContent = 'Source: AI LLM';
+      dataSourceEl.style.background = '#2563eb';
+    } else if (lastDataSource === 'fallback') {
+      dataSourceEl.textContent = 'Source: Rule-based';
+      dataSourceEl.style.background = '#dc2626';
+    }
+  }
+}
+
 async function pingHealth() {
   if (out) out.textContent = 'Pinging...';
   try {
@@ -86,9 +105,16 @@ async function pingHealth() {
     const data = await res.json();
     if (out) out.textContent = JSON.stringify(data, null, 2);
     setStatus('Connected', true);
+    
+    // Update LLM status based on health response
+    if (data.llm) {
+      setLLMStatus(data.llm.available);
+    }
+    
   } catch (e) {
     if (out) out.textContent = 'Error: ' + e.message;
     setStatus('Disconnected', false);
+    setLLMStatus(false);
   }
 }
 
@@ -801,6 +827,11 @@ async function scanOnce() {
     });
     const genData = await gen.json();
     const sample = genData.data[0];
+    
+    // Update data source indicator
+    if (genData.source) {
+      setLLMStatus(genData.source === 'llm', genData.source);
+    }
 
     // 2) predict servo
     const pred = await fetch('/api/predict', {
@@ -874,6 +905,11 @@ function setupHandlers() {
       const res = await fetch('/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ count }) });
       const data = await res.json();
       genOut.textContent = JSON.stringify(data, null, 2);
+      
+      // Update data source indicator
+      if (data.source) {
+        setLLMStatus(data.source === 'llm', data.source);
+      }
     } catch (e) { genOut.textContent = 'Error: ' + e.message; }
   });
 

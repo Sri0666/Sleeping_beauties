@@ -1,9 +1,11 @@
 // Minimal Express server serving static files from ./public
 const express = require('express');
 const path = require('path');
+const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const LLM_API_URL = process.env.LLM_API_URL || 'http://localhost:8000';
 
 // Parse JSON bodies
 app.use(express.json());
@@ -11,9 +13,28 @@ app.use(express.json());
 // Serve static assets
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Health
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString() });
+// Health - now includes LLM status
+app.get('/api/health', async (req, res) => {
+  const nodeHealth = { ok: true, time: new Date().toISOString() };
+  
+  // Check LLM API health
+  let llmHealth = { available: false, error: null };
+  try {
+    const response = await fetch(`${LLM_API_URL}/health`, { 
+      timeout: 3000 
+    });
+    if (response.ok) {
+      llmHealth = await response.json();
+      llmHealth.available = true;
+    }
+  } catch (error) {
+    llmHealth.error = error.message;
+  }
+  
+  res.json({
+    ...nodeHealth,
+    llm: llmHealth
+  });
 });
 
 // --- Synthetic data generation and servo prediction (Node version of the Python snippet) ---
@@ -57,10 +78,40 @@ function generateSyntheticExample() {
 }
 
 // POST /api/generate { count?: number }
-app.post('/api/generate', (req, res) => {
+app.post('/api/generate', async (req, res) => {
   const count = Math.min(100, Math.max(1, Number(req.body?.count || 10)));
-  const data = Array.from({ length: count }, () => generateSyntheticExample());
-  res.json({ success: true, data });
+  
+  try {
+    console.log(`Attempting to generate ${count} examples using LLM API...`);
+    
+    // Try LLM API first
+    const response = await fetch(`${LLM_API_URL}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ count }),
+      timeout: 30000 // 30 second timeout for LLM
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`LLM API generated ${data.data.length} examples successfully`);
+      res.json(data);
+      return;
+    } else {
+      throw new Error(`LLM API returned ${response.status}: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.log(`LLM API unavailable (${error.message}), using fallback generation`);
+    
+    // Fallback to current rule-based generation
+    const data = Array.from({ length: count }, () => generateSyntheticExample());
+    res.json({ 
+      success: true, 
+      data,
+      source: 'rule-based-fallback',
+      llm_error: error.message
+    });
+  }
 });
 
 // Rule-based fallback used in examples and current prediction
@@ -73,7 +124,7 @@ function ruleBasedServo(pressure, spO2) {
 }
 
 // POST /api/predict { pressure: {..}, spO2: number, examples?: Array<{pressure, spO2}> }
-app.post('/api/predict', (req, res) => {
+app.post('/api/predict', async (req, res) => {
   const { pressure, spO2, examples } = req.body || {};
 
   // Basic validation
@@ -86,22 +137,53 @@ app.post('/api/predict', (req, res) => {
     }
   }
 
-  // If examples provided, attach their rule-based servo for transparency (few-shot analogue)
-  const annotatedExamples = Array.isArray(examples)
-    ? examples.slice(0, 20).map((ex) => ({
-        ...ex,
-        servo_action: ruleBasedServo(ex.pressure, ex.spO2),
-      }))
-    : [];
+  try {
+    console.log('Attempting servo prediction using LLM API...');
+    
+    // Try LLM API first
+    const response = await fetch(`${LLM_API_URL}/predict`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pressure, spO2, examples }),
+      timeout: 30000 // 30 second timeout for LLM
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('LLM API prediction successful');
+      res.json({
+        success: true,
+        input: { pressure, spO2 },
+        servo_action: data.servo_action,
+        examples: data.examples_used ? `${data.examples_used} examples used` : [],
+        source: data.source
+      });
+      return;
+    } else {
+      throw new Error(`LLM API returned ${response.status}: ${response.statusText}`);
+    }
+  } catch (error) {
+    console.log(`LLM API unavailable (${error.message}), using rule-based fallback`);
+    
+    // Fallback to current rule-based logic
+    const annotatedExamples = Array.isArray(examples)
+      ? examples.slice(0, 20).map((ex) => ({
+          ...ex,
+          servo_action: ruleBasedServo(ex.pressure, ex.spO2),
+        }))
+      : [];
 
-  const servo_action = ruleBasedServo(pressure, spO2);
+    const servo_action = ruleBasedServo(pressure, spO2);
 
-  res.json({
-    success: true,
-    input: { pressure, spO2 },
-    examples: annotatedExamples,
-    servo_action,
-  });
+    res.json({
+      success: true,
+      input: { pressure, spO2 },
+      examples: annotatedExamples,
+      servo_action,
+      source: 'rule-based-fallback',
+      llm_error: error.message
+    });
+  }
 });
 
 // Catch-all to client app
